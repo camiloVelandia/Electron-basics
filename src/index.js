@@ -1,8 +1,21 @@
 "use strict";
 
 // instanciando los objetos app y BrowserWindow
-import { app, BrowserWindow } from "electron";
+import {
+  app,
+  BrowserWindow,
+  Tray,
+  globalShortcut,
+  protocol,
+} from "electron";
 import devtools from "./devtools";
+import setIpcMain from "./ipcMainEvents";
+import handleErrors from "./handle-errors";
+import os from "os";
+import path from "path";
+
+global.win; // eslint-disable-line
+global.tray; // eslint-disable-line
 
 if (process.env.NODE_ENV === "development") {
   devtools();
@@ -10,40 +23,87 @@ if (process.env.NODE_ENV === "development") {
 
 // imprimiendo un mensaje en la consola antes de salir
 app.on("before-quit", () => {
-  console.log("Saliendo..");
+  globalShortcut.unregisterAll();
 });
 
 // Ejecutando ordenes cuando la aplicación esta lista
 app.on("ready", () => {
+  protocol.registerFileProtocol(
+    "plp",
+    (request, callback) => {
+      const url = request.url.substr(6);
+      callback({ path: path.normalize(url) }); // eslint-disable-line
+    },
+    (err) => {
+      if (err) throw err;
+    }
+  );
+
   // creando una ventana
-  let win = new BrowserWindow({
+  global.win = new BrowserWindow({
     width: 800,
     height: 600,
-    title: "Hola Mundo!",
+    title: "Platzipics",
     center: true,
     maximizable: false,
     show: false,
   });
 
+  globalShortcut.register(
+    "CommandOrControl+Alt+p",
+    () => {
+      global.win.show();
+      global.win.focus();
+    }
+  );
+
+  setIpcMain(global.win);
+  handleErrors(global.win);
+
   // Mostrando la ventana solo cuando el contenido a mostrar sea cargado
-  win.once("ready-to-show", () => {
-    win.show();
+  global.win.once("ready-to-show", () => {
+    global.win.show();
   });
 
   // Escuchando el evento cuando la ventana es movida
-  win.on("move", () => {
-    const position = win.getPosition();
+  global.win.on("move", () => {
+    const position = global.win.getPosition();
     console.log(`la posición es ${position}`);
   });
 
   // detectando el cierre de la ventana para cerrar el aplicativo
-  win.on("closed", () => {
-    win = null;
+  global.win.on("closed", () => {
+    global.win = null;
     app.quit();
   });
 
+  let icon;
+  if (os.platform() === "win32") {
+    icon = path.join(
+      __dirname,
+      "assets",
+      "icons",
+      "tray-icon.ico"
+    );
+  } else {
+    icon = path.join(
+      __dirname,
+      "assets",
+      "icons",
+      "tray-icon.png"
+    );
+  }
+
+  global.tray = new Tray(icon);
+  global.tray.setToolTip("Platzipics");
+  global.tray.on("click", () => {
+    global.win.isVisible()
+      ? global.win.hide()
+      : global.win.show();
+  });
+
   // Carga una url desde el folder renderer
-  win.loadURL(
+  global.win.loadURL(
     `file://${__dirname}/renderer/index.html`
   );
 });
